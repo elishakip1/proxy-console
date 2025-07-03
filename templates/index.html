@@ -27,8 +27,7 @@
         .proxy-masked {
             font-family: monospace;
         }
-        /* Disabled styles */
-        a.disabled, button.disabled { /* Apply to both anchor and button */
+        a.disabled {
             pointer-events: none;
             color: #6c757d !important;
             border-color: #6c757d !important;
@@ -67,8 +66,8 @@
 <body>
     <div class="container bg-white p-4 rounded shadow-sm">
         <div class="d-flex justify-content-between align-items-center mb-3">
-             <h2 class="mb-0">Proxy Checker(V2.5)</h2>
-                <p> <i>WORKING..........</i></p>
+            <h2 class="mb-0">Proxy Checker (V2.5)</h2>
+            <p class="mb-0"><i>WORKING..........</i></p>
             <a href="#" class="btn btn-outline-secondary btn-sm disabled">⚡Upgrade</a>
         </div>
 
@@ -79,11 +78,19 @@
         <div class="accordion" id="proxyAccordion">
             <div class="accordion-item">
                 <h2 class="accordion-header" id="formHeading">
-                    <button class="accordion-button {% if results %}collapsed{% endif %}" type="button" data-bs-toggle="collapse" data-bs-target="#proxyForm" aria-expanded="{{ 'false' if results else 'true' }}" aria-controls="proxyForm">
+                    <button class="accordion-button {% if results %}collapsed{% else %}show{% endif %}"
+                            type="button"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#proxyForm"
+                            aria-expanded="{% if results %}false{% else %}true{% endif %}"
+                            aria-controls="proxyForm">
                         Paste or Upload Proxies
                     </button>
                 </h2>
-                <div id="proxyForm" class="accordion-collapse collapse {% if not results %}show{% endif %}" aria-labelledby="formHeading" data-bs-parent="#proxyAccordion">
+                <div id="proxyForm"
+                     class="accordion-collapse collapse {% if not results %}show{% endif %}"
+                     aria-labelledby="formHeading"
+                     data-bs-parent="#proxyAccordion">
                     <div class="accordion-body">
                         <form method="POST" enctype="multipart/form-data" id="proxyFormElement">
                             <div class="mb-3">
@@ -94,7 +101,7 @@
                             <div class="mb-3">
                                 <label for="proxytext" class="form-label">Or Paste Proxies</label>
                                 <div class="textarea-container">
-                                    <textarea name="proxytext" id="proxytext" class="form-control textarea-box" placeholder="Paste proxies here (one per line, max 50 lines)..." oninput="updateProxyCounter(this)"></textarea>
+                                    <textarea name="proxytext" id="proxytext" class="form-control textarea-box" placeholder="Paste proxies here (one per line, format: host:port:user:pass)..." oninput="updateProxyCounter(this)"></textarea>
                                     <div class="proxy-counter" id="proxyCounter">0/50</div>
                                 </div>
                             </div>
@@ -110,12 +117,12 @@
         <h5 class="mt-4">✅ Good Proxies (Fraud Score 0)</h5>
         <ul class="list-group mt-2">
             {% for item in results %}
-            <li class="list-group-item d-flex justify-content-between align-items-center" data-proxy="{{ item.proxy }}" data-used="{{ 'true' if item.used else 'false' }}">
+            <li class="list-group-item d-flex justify-content-between align-items-center">
                 <span class="proxy-masked" id="proxy-{{ loop.index }}" data-full-proxy="{{ item.proxy }}">
                     {{ item.proxy.split(':')[0] }}:{{ item.proxy.split(':')[1] }}:********
                 </span>
                 {% if item.used %}
-                <span class="badge bg-danger ms-auto">USED</span> {# Changed to Bootstrap badge #}
+                <span class="used-badge">USED</span>
                 {% else %}
                 <button class="btn btn-sm btn-outline-secondary copy-btn"
                         onclick="copyToClipboard('proxy-{{ loop.index }}', this); trackUsedProxy('{{ item.proxy }}')">
@@ -125,7 +132,7 @@
             </li>
             {% endfor %}
         </ul>
-        <p class="mt-3 text-muted text-end">You will be redirected to the homepage in <span id="countdown">{{ redirect_delay }}</span> seconds...</p>
+        <p class="mt-3 text-muted text-end">You will be redirected to the homepage in 5 minutes...</p>
         {% endif %}
     </div>
 
@@ -133,15 +140,13 @@
         let trackedProxies = new Set();
         const MAX_LINES = 50;
         let fileLineCount = 0;
-        let redirectCountdownInterval; // To store the countdown interval
 
         function updateProxyCounter(textarea) {
             const lines = textarea.value.split('\n').filter(line => line.trim() !== '');
             const count = lines.length;
             const counter = document.getElementById('proxyCounter');
             counter.textContent = `${count}/${MAX_LINES}`;
-
-            // Update styling based on count
+            
             if (count > MAX_LINES) {
                 counter.className = 'proxy-counter counter-error';
                 document.getElementById('submitBtn').disabled = true;
@@ -152,14 +157,11 @@
                 counter.className = 'proxy-counter counter-ok';
                 document.getElementById('submitBtn').disabled = false;
             }
-
-            // Update file counter if textarea has content
+            
             if (count > 0) {
                 document.getElementById('fileCounter').textContent = "File upload will be ignored";
-                document.getElementById('proxyfile').disabled = true; // Disable file input
             } else {
                 document.getElementById('fileCounter').textContent = `File contains: ${fileLineCount} proxies`;
-                document.getElementById('proxyfile').disabled = false; // Enable file input
             }
         }
 
@@ -171,164 +173,77 @@
                     const lines = e.target.result.split('\n').filter(line => line.trim() !== '');
                     fileLineCount = lines.length;
                     const fileCounter = document.getElementById('fileCounter');
-
+                    
                     if (fileLineCount > MAX_LINES) {
                         fileCounter.innerHTML = `<span class="counter-error">File contains: ${fileLineCount} proxies (max ${MAX_LINES})</span>`;
                         document.getElementById('submitBtn').disabled = true;
-                    } else if (fileLineCount === 0) {
-                         fileCounter.innerHTML = `File contains: <span class="counter-warning">0</span> proxies`;
-                         document.getElementById('submitBtn').disabled = true; // Disable if file is empty
-                    }
-                    else {
+                    } else {
                         fileCounter.innerHTML = `File contains: <span class="counter-ok">${fileLineCount}</span> proxies`;
                         document.getElementById('submitBtn').disabled = false;
                     }
-
-                    // Clear textarea when file is selected and disable it
+                    
                     document.getElementById('proxytext').value = '';
-                    document.getElementById('proxytext').disabled = true;
                     document.getElementById('proxyCounter').textContent = '0/50';
                     document.getElementById('proxyCounter').className = 'proxy-counter counter-ok';
-
                 };
                 reader.readAsText(file);
             } else {
                 fileLineCount = 0;
                 document.getElementById('fileCounter').textContent = "File contains: 0 proxies";
-                document.getElementById('proxytext').disabled = false; // Re-enable textarea
-                updateProxyCounter(document.getElementById('proxytext')); // Re-evaluate textarea state
             }
         }
 
+        /**
+         * [MODIFIED] Copies the full proxy to the clipboard and replaces the button
+         * with a "USED" badge for immediate user feedback.
+         */
         function copyToClipboard(elementId, clickedButton) {
             const element = document.getElementById(elementId);
             const fullProxy = element.getAttribute('data-full-proxy');
 
-            // Immediately disable this specific copy button
-            clickedButton.disabled = true;
-            clickedButton.classList.add('disabled');
-            clickedButton.textContent = 'Copied!'; // Provide instant feedback
-
             navigator.clipboard.writeText(fullProxy).then(() => {
-                // No need for a separate 'copiedMsg' element if button text changes
-                // You could add a temporary checkmark if you want a more distinct visual.
+                // Create the "USED" badge
+                const usedBadge = document.createElement('span');
+                usedBadge.className = 'used-badge';
+                usedBadge.innerText = 'USED';
+
+                // Get the parent element of the button (the li)
+                const listItem = clickedButton.parentElement;
+
+                // Remove the button from the DOM
+                clickedButton.remove();
+
+                // Add the new "USED" badge to the list item
+                listItem.appendChild(usedBadge);
+
             }).catch(err => {
                 console.error('Failed to copy text: ', err);
-                // Re-enable button if copy fails
-                clickedButton.disabled = false;
-                clickedButton.classList.remove('disabled');
-                clickedButton.textContent = 'Copy';
+                alert('Failed to copy proxy. Please try again.');
             });
-
-            // Re-enable *all* buttons after 60 seconds (unless already copied)
-            // This global re-enable might re-enable buttons that were genuinely used.
-            // A more robust solution involves tracking individual button states.
-            // For now, let's keep the simplicity of global re-enable for a period.
-            setTimeout(() => {
-                const allButtons = document.querySelectorAll('.copy-btn');
-                allButtons.forEach(button => {
-                    // Only re-enable if it's not the one that was just copied AND if its proxy isn't already marked as used
-                    const listItem = button.closest('li');
-                    if (listItem && listItem.dataset.used === 'false') { // Check the data-used attribute from the list item
-                         button.disabled = false;
-                         button.classList.remove('disabled');
-                         button.textContent = 'Copy';
-                    }
-                });
-            }, 60000); // 60 seconds
         }
-
 
         function trackUsedProxy(proxy) {
-            // Prevent duplicate tracking if the user clicks multiple times quickly
-            if (trackedProxies.has(proxy)) {
-                return;
-            }
+            if (trackedProxies.has(proxy)) return;
             trackedProxies.add(proxy);
-
-            // Find the list item for this proxy and mark it as used visually
-            const listItem = document.querySelector(`li[data-proxy="${proxy}"]`);
-            if (listItem) {
-                listItem.dataset.used = 'true'; // Update data attribute
-                const copyButton = listItem.querySelector('.copy-btn');
-                if (copyButton) {
-                    copyButton.remove(); // Remove the button
-                }
-                const usedBadge = document.createElement("span");
-                usedBadge.className = "badge bg-danger ms-auto";
-                usedBadge.innerText = "USED";
-                listItem.appendChild(usedBadge);
-            }
-
+            
             fetch('/track-used', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({proxy: proxy})
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    console.log(`Proxy '${proxy}' successfully marked as used on server.`);
-                } else {
-                    console.error(`Failed to mark proxy '${proxy}' as used: ${data.message}`);
-                }
-            })
-            .catch(error => console.error('Error tracking used proxy:', error));
+            }).catch(error => console.error('Error tracking used proxy:', error));
         }
 
-        // Initialize counters on page load
-        document.addEventListener('DOMContentLoaded', (event) => {
-            updateProxyCounter(document.getElementById('proxytext')); // Initial check for textarea
-            // If there are results, initialize the countdown and mark initially used proxies
-            {% if results %}
-                document.querySelectorAll('li[data-used="true"]').forEach(listItem => {
-                    const proxy = listItem.dataset.proxy;
-                    trackedProxies.add(proxy); // Add to local set on load
-                });
-
-                // Start countdown
-                let countdownElement = document.getElementById('countdown');
-                let timeLeft = parseInt(countdownElement.textContent);
-
-                redirectCountdownInterval = setInterval(() => {
-                    timeLeft--;
-                    countdownElement.textContent = timeLeft;
-                    if (timeLeft <= 0) {
-                        clearInterval(redirectCountdownInterval);
-                        window.location.href = "/";
-                    }
-                }, 1000);
-            {% endif %}
-        });
-
-        // Event listener for file input to clear text area
-        document.getElementById('proxyfile').addEventListener('change', function() {
-            if (this.files.length > 0) {
-                document.getElementById('proxytext').value = '';
-                document.getElementById('proxytext').disabled = true;
-                document.getElementById('proxyCounter').textContent = '0/50';
-                document.getElementById('proxyCounter').className = 'proxy-counter counter-ok';
-            } else {
-                 document.getElementById('proxytext').disabled = false;
-                 updateProxyCounter(document.getElementById('proxytext'));
-            }
-        });
-
-        // Event listener for textarea to clear file input
-        document.getElementById('proxytext').addEventListener('input', function() {
-            if (this.value.trim().length > 0) {
-                document.getElementById('proxyfile').value = ''; // Clear file input
-                document.getElementById('proxyfile').disabled = true; // Disable file input
-                document.getElementById('fileCounter').textContent = "File upload will be ignored";
-            } else {
-                document.getElementById('proxyfile').disabled = false; // Re-enable file input
-                document.getElementById('fileCounter').textContent = `File contains: ${fileLineCount} proxies`;
-            }
-        });
+        document.getElementById('proxyCounter').textContent = '0/50';
+        
+        {% if results %}
+        setTimeout(function() {
+            window.location.href = "/";
+        }, 300000); // 5 minutes
+        {% endif %}
     </script>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" 
+            integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" 
+            crossorigin="anonymous"></script>
 </body>
 </html>
