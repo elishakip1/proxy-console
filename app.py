@@ -142,7 +142,7 @@ def get_fraud_score(ip, proxy_line):
         
         session = requests.Session()
         retries = Retry(total=2, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
-        session.mount('https://', HTTPAdapter(max_retries=retries))
+        session.mount('http://', HTTPAdapter(max_retries=retries))
         session.mount('https://', HTTPAdapter(max_retries=retries))
         
         url = f"https://scamalytics.com/ip/{ip}"
@@ -210,9 +210,6 @@ def list_used_ips():
     try:
         sheet = get_sheet()
         if sheet:
-            # gspread get_all_records() returns a list of dictionaries.
-            # The admin template expects keys: 'IP', 'Proxy', 'Date'.
-            # Ensure your Google Sheet has these headers in the first row.
             return sheet.get_all_records()
         return []
     except Exception as e:
@@ -222,8 +219,6 @@ def list_used_ips():
 def single_check_proxy(proxy_line):
     try:
         time.sleep(random.uniform(MIN_DELAY, MAX_DELAY))
-        logger.debug(f"Checking proxy: {proxy_line[:20]}...")
-        
         ip = get_ip_from_proxy(proxy_line)
         if not ip: return None
 
@@ -231,15 +226,12 @@ def single_check_proxy(proxy_line):
         if score == 0:
             logger.info(f"✅ Good proxy found: {proxy_line[:20]}...")
             return {"proxy": proxy_line, "ip": ip}
-        else:
-            logger.debug(f"Proxy {proxy_line[:20]}... has score {score}")
         return None
     except Exception as e:
         logger.error(f"Error in proxy check: {str(e)}")
         return None
 
 def log_good_proxy(proxy):
-    # This function remains, logging to the local SQLite DB
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
@@ -250,7 +242,6 @@ def log_good_proxy(proxy):
         if conn: conn.close()
 
 def log_daily_check(good_count):
-    # This function remains, logging to the local SQLite DB
     try:
         today = datetime.date.today().isoformat()
         conn = sqlite3.connect(DB_PATH)
@@ -261,7 +252,6 @@ def log_daily_check(good_count):
                      good_count = good_count + excluded.good_count''',
                   (today, good_count))
         conn.commit()
-        logger.info(f"Logged daily check: {good_count} good proxies")
     except Exception as e: logger.error(f"Error logging daily check: {str(e)}")
     finally:
         if conn: conn.close()
@@ -274,15 +264,39 @@ def index():
     logger.info(f"Handling {request.method} request for /")
     
     if request.method == "POST":
-        proxies_to_check = []
-        # ... (code for reading proxies from file/text is unchanged) ...
+        logger.info(f"Handling POST request for /")
+        all_lines = []
+        input_count = 0
+        truncation_warning = ""
+
+        # Check for file upload first
         if 'proxyfile' in request.files and request.files['proxyfile'].filename:
-            # ...
-            proxies_to_check = all_lines[:PROXY_CHECK_HARD_LIMIT]
-        elif 'proxytext' in request.form:
-            # ...
-            proxies_to_check = all_lines[:PROXY_CHECK_HARD_LIMIT]
+            logger.info("Processing proxies from file upload.")
+            file = request.files['proxyfile']
+            try:
+                all_lines = file.read().decode("utf-8").strip().splitlines()
+                input_count = len(all_lines)
+            except Exception as e:
+                logger.error(f"Could not read uploaded file: {e}")
+                message = "Error reading the uploaded file. Please ensure it is a valid text file."
+                return render_template("index.html", results=results, message=message)
+
+        # If no file, check for text input
+        elif 'proxytext' in request.form and request.form.get("proxytext", "").strip():
+            logger.info("Processing proxies from text area.")
+            proxytext = request.form.get("proxytext", "")
+            all_lines = proxytext.strip().splitlines()
+            input_count = len(all_lines)
         
+        # Apply hard limit
+        if input_count > PROXY_CHECK_HARD_LIMIT:
+            truncation_warning = f" Only the first {PROXY_CHECK_HARD_LIMIT} proxies were processed."
+            proxies_to_check = all_lines[:PROXY_CHECK_HARD_LIMIT]
+        else:
+            proxies_to_check = all_lines
+        
+        processed_count = len(proxies_to_check)
+
         # Validate and deduplicate
         valid_proxies = list(set(p.strip() for p in proxies_to_check if p.strip() and len(p.split(':')) >= 4))
         
@@ -292,28 +306,32 @@ def index():
                 for future in as_completed(futures):
                     result = future.result()
                     if result:
-                        # [MODIFIED] Check against Google Sheet
                         used = is_ip_used(result["ip"])
                         results.append({"proxy": result["proxy"], "used": used})
-                        log_good_proxy(result["proxy"]) # Still log to local DB
+                        log_good_proxy(result["proxy"])
             
             good_count = len([r for r in results if not r['used']])
+            used_count = len(results) - good_count
             log_daily_check(good_count)
-            # ... (message generation is unchanged) ...
+            message = f"✅ Processed {len(valid_proxies)} of {input_count} submitted proxies. Found {good_count} good proxies ({used_count} already used).{truncation_warning}"
+        else:
+            if input_count > 0:
+                 message = f"⚠️ Submitted {input_count} lines, but none had the valid format (host:port:user:pass)."
+            else:
+                 message = f"⚠️ No proxies were submitted."
+    
     return render_template("index.html", results=results, message=message)
 
 @app.route("/track-used", methods=["POST"])
 def track_used():
-    """[MODIFIED] Tracks used proxy by sending it to Google Sheets."""
+    """Tracks used proxy by sending it to Google Sheets."""
     logger.info("Tracking used proxy via Google Sheets")
     try:
         data = request.get_json()
         if data and "proxy" in data:
             proxy = data["proxy"]
-            logger.info(f"Tracking proxy: {proxy[:20]}...")
             ip = get_ip_from_proxy(proxy)
             if ip:
-                # Call the new Google Sheets function
                 append_used_ip(ip, proxy)
             return jsonify({"status": "success"})
         return jsonify({"status": "error"}), 400
@@ -324,7 +342,7 @@ def track_used():
 
 @app.route("/delete-used-ip/<ip>")
 def delete_used_ip_route(ip):
-    """[MODIFIED] Deletes an IP from the Google Sheet."""
+    """Deletes an IP from the Google Sheet."""
     logger.info(f"Deleting used IP from Google Sheet: {ip}")
     remove_ip_from_sheet(ip)
     return redirect(url_for("admin"))
@@ -336,7 +354,6 @@ def admin():
     logs = []
     daily_data = {}
     
-    # Get stats from local SQLite database (this part is unchanged)
     try:
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
@@ -352,13 +369,19 @@ def admin():
     except Exception as e:
         logger.error(f"Error getting stats from local DB: {e}")
 
-    # Generate graph (unchanged)
     if daily_data:
-        # ... (graph generation logic) ...
+        plt.figure(figsize=(10, 4))
+        plt.plot(list(daily_data.keys()), list(daily_data.values()), marker="o", color="green")
+        plt.title("Good Proxies per Day")
+        plt.xlabel("Date")
+        plt.ylabel("Count")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        if not os.path.exists("static"):
+            os.makedirs("static")
         plt.savefig("static/proxy_stats.png")
         plt.close()
 
-    # [MODIFIED] Get used IPs from Google Sheets
     used_ips = list_used_ips()
     
     return render_template("admin.html", logs=logs, stats=stats, 
